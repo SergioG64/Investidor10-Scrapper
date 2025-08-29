@@ -27,9 +27,11 @@ async def extrair_dados(horario_execucao):
         browser = await p.chromium.launch(headless=True)
         page = await browser.new_page()
         await page.goto(URL, timeout=60000)
-
-        # Aguarda carregamento de tabelas dinâmicas (via JS)
+        
+        # Aguarda o carregamento explícito do DOM + tempo extra para JS
         await page.wait_for_selector(".table-responsive", timeout=60000)
+        await page.wait_for_timeout(5000)  # aguarda mais 5 segundos para garantir
+
 
         # Captura HTML
         conteudo = await page.content()
