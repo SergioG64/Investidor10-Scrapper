@@ -32,8 +32,8 @@ jobs:
         if: github.event.schedule == '20 20 * * *'
         run: python investidor10_scraper.py "17:00"
 
-      - name: Armazenar resultados
-        uses: actions/upload-artifact@v3
-        with:
-          name: htmls-carteira-${{ github.run_id }}
-          path: data/
+  - name: Armazenar resultados
+    uses: actions/upload-artifact@v4
+    with:
+      name: htmls-carteira-${{ github.run_id }}
+      path: data/
