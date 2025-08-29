@@ -53,6 +53,7 @@ async def extrair_dados(horario_execucao):
             html = await tabela.inner_html()
             dados.append({"index": idx, "html": html})
         print(f"[INFO] Quantidade de tabelas capturadas: {len(tabelas)}")
+
         # Fecha o navegador
         await browser.close()
 
@@ -64,8 +65,17 @@ async def extrair_dados(horario_execucao):
             print(f"[✔] Dados extraídos salvos em: {destino_json}")
         else:
             print("[⚠] Horário inválido fornecido. Nenhum JSON salvo.")
+        screenshot_path = f"data/screenshot_{horario_execucao.replace(':','')}.png"
+        await page.screenshot(path=screenshot_path, full_page=True)
+        print(f"[✔] Screenshot salva em: {screenshot_path}")
+
 
 # Ponto de entrada
 if __name__ == "__main__":
-    horario = sys.argv[1] if len(sys.argv) > 1 else "17:00"
-    asyncio.run(extrair_dados(horario))
+    try:
+        horario = sys.argv[1] if len(sys.argv) > 1 else "17:00"
+        print(f"[INFO] Executando script para horário: {horario}")
+        asyncio.run(extrair_dados(horario))
+        print("[INFO] Script finalizado com sucesso.")
+    except Exception as e:
+        print(f"[ERRO] Falha na execução: {str(e)}")
