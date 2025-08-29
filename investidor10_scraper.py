@@ -9,6 +9,9 @@ from playwright.async_api import async_playwright
 import json
 import sys
 
+print("🔥 SCRIPT INVESTIDOR10_INICIADO")
+
+
 # URL da carteira
 URL = "https://investidor10.com.br/carteira/545535/"
 
@@ -20,6 +23,8 @@ ARQUIVOS = {
 }
 
 async def extrair_dados(horario_execucao):
+    print(f"🕐 Entrou na função com horário: {horario_execucao}")
+
     print(f"[INÍCIO] Horário: {horario_execucao} | Data/Hora: {datetime.now()}")
 
     async with async_playwright() as p:
@@ -68,7 +73,13 @@ async def extrair_dados(horario_execucao):
 
 if __name__ == "__main__":
     try:
-        horario = sys.argv[1] if len(sys.argv) > 1 else "17:00"
+        if len(sys.argv) > 1:
+            horario = sys.argv[1]
+            print(f"[ARGS] Horário recebido via argumento: {horario}")
+        else:
+            horario = "17:00"
+            print("[ARGS] Nenhum argumento recebido, usando default: 17:00")
+
         print(f"[INFO] Executando script para horário: {horario}")
         asyncio.run(extrair_dados(horario))
         print("[INFO] Script finalizado com sucesso.")
