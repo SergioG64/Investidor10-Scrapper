@@ -1,6 +1,6 @@
 # investidor10_scraper.py
 # Autor: ChatGPT para Sérgio Gaigher
-# Objetivo: Capturar dados da carteira pública no Investidor10 em horários definidos
+# Objetivo: Capturar dados da carteira pública no Investidor10 em horários definidos, com logs detalhados e screenshot para debugging
 
 import asyncio
 from datetime import datetime
@@ -9,17 +9,16 @@ from playwright.async_api import async_playwright
 import json
 import sys
 
-# URL pública da carteira
+# URL da carteira
 URL = "https://investidor10.com.br/carteira/545535/"
 
-# Caminhos de destino conforme horário de execução
+# Caminhos para salvar dados conforme o horário
 ARQUIVOS = {
     "00:00": "data/crypto_open.json",
     "10:30": "data/open_prices.json",
     "17:00": "data/final_prices.json"
 }
 
-# Função principal de extração
 async def extrair_dados(horario_execucao):
     print(f"[INÍCIO] Horário: {horario_execucao} | Data/Hora: {datetime.now()}")
 
@@ -27,37 +26,38 @@ async def extrair_dados(horario_execucao):
         browser = await p.chromium.launch(headless=True)
         page = await browser.new_page()
         await page.goto(URL, timeout=60000)
-        
-        # Aguarda o carregamento explícito do DOM + tempo extra para JS
+
+        # Espera seletor e dá tempo extra para o JS renderizar
         await page.wait_for_selector(".table-responsive", timeout=60000)
-        await page.wait_for_timeout(5000)  # aguarda mais 5 segundos para garantir
+        await page.wait_for_timeout(5000)
 
-
-        # Captura HTML
-        conteudo = await page.content()
-
-        # Cria pasta se necessário
+        # Cria pasta se não existir
         Path("data").mkdir(parents=True, exist_ok=True)
 
-        # Salva HTML bruto para debug
-        nome_html = f"data/carteira_{horario_execucao.replace(':','')}.html"
-        with open(nome_html, "w", encoding="utf-8") as f:
+        # Salva screenshot para debug
+        screenshot_path = f"data/screenshot_{horario_execucao.replace(':','')}.png"
+        await page.screenshot(path=screenshot_path, full_page=True)
+        print(f"[✔] Screenshot salva em: {screenshot_path}")
+
+        # Captura HTML bruto da página
+        conteudo = await page.content()
+        html_path = f"data/carteira_{horario_execucao.replace(':','')}.html"
+        with open(html_path, "w", encoding="utf-8") as f:
             f.write(conteudo)
-        print(f"[✔] HTML bruto salvo: {nome_html}")
+        print(f"[✔] HTML bruto salvo: {html_path}")
 
-        # Captura todas as tabelas visíveis
+        # Captura conteúdo das tabelas
         tabelas = await page.query_selector_all(".table-responsive")
-        dados = []
+        print(f"[INFO] Quantidade de tabelas capturadas: {len(tabelas)}")
 
+        dados = []
         for idx, tabela in enumerate(tabelas):
             html = await tabela.inner_html()
             dados.append({"index": idx, "html": html})
-        print(f"[INFO] Quantidade de tabelas capturadas: {len(tabelas)}")
 
-        # Fecha o navegador
         await browser.close()
 
-        # Salva como JSON
+        # Salva JSON com dados HTML das tabelas
         destino_json = ARQUIVOS.get(horario_execucao)
         if destino_json:
             with open(destino_json, "w", encoding="utf-8") as f:
@@ -65,12 +65,7 @@ async def extrair_dados(horario_execucao):
             print(f"[✔] Dados extraídos salvos em: {destino_json}")
         else:
             print("[⚠] Horário inválido fornecido. Nenhum JSON salvo.")
-        screenshot_path = f"data/screenshot_{horario_execucao.replace(':','')}.png"
-        await page.screenshot(path=screenshot_path, full_page=True)
-        print(f"[✔] Screenshot salva em: {screenshot_path}")
 
-
-# Ponto de entrada
 if __name__ == "__main__":
     try:
         horario = sys.argv[1] if len(sys.argv) > 1 else "17:00"
