@@ -52,7 +52,7 @@ async def extrair_dados(horario_execucao):
         for idx, tabela in enumerate(tabelas):
             html = await tabela.inner_html()
             dados.append({"index": idx, "html": html})
-
+        print(f"[INFO] Quantidade de tabelas capturadas: {len(tabelas)}")
         # Fecha o navegador
         await browser.close()
 
