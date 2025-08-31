@@ -21,6 +21,17 @@ def parse_moeda(valor):
     except ValueError:
         return 0.0
 
+def parse_numero(valor):
+    if not isinstance(valor, str):
+        return 0.0
+
+    valor = valor.replace(".", "").replace(",", ".").strip()
+
+    try:
+        return float(valor)
+    except ValueError:
+        return 0.0
+
 def encontrar_arquivos_json():
     hoje = datetime.today().strftime("%Y-%m-%d")
     arquivos = os.listdir("dados")
@@ -41,22 +52,23 @@ def gerar_relatorio(path_inicio, path_fim):
 
     df = df_fim.merge(df_inicio, on="Ativo", suffixes=("_fim", "_inicio"))
 
-    # Limpar campos numéricos
+    # Limpar campos monetários
     for campo in ["Preço Médio_fim", "Preço Atual_fim", "Preço Médio_inicio", "Preço Atual_inicio"]:
         df[campo] = df[campo].apply(parse_moeda)
 
-    df["Quantidade_fim"] = df["Quantidade_fim"].astype(float)
-    df["Quantidade_inicio"] = df["Quantidade_inicio"].astype(float)
+    # Limpar campos numéricos (quantidade)
+    df["Quantidade_fim"] = df["Quantidade_fim"].apply(parse_numero)
+    df["Quantidade_inicio"] = df["Quantidade_inicio"].apply(parse_numero)
 
-    # Calcula variação do dia com base na diferença de preço
+    # Calcular variação do dia
     df["Variação_dia"] = ((df["Preço Atual_fim"] - df["Preço Atual_inicio"]) / df["Preço Atual_inicio"]) * 100
 
-    # Saldo aplicado (Preço Médio x Quantidade)
+    # Saldo aplicado (baseado no preço médio)
     saldo_aplicado = df["Preço Médio_fim"] * df["Quantidade_fim"]
     saldo_total = df["Preço Atual_fim"] * df["Quantidade_fim"]
     variacao_total = ((saldo_total.sum() - saldo_aplicado.sum()) / saldo_aplicado.sum()) * 100
 
-    # Top 3 Altas e Baixas
+    # Top 3
     df_ordenado = df.sort_values(by="Variação_dia", ascending=False)
     top_altas = df_ordenado.head(3)
     top_baixas = df_ordenado.tail(3).sort_values(by="Variação_dia")
