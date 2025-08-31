@@ -1,56 +1,66 @@
-
 import sys
 import os
 from datetime import datetime
-from pathlib import Path
-from playwright.sync_api import sync_playwright
-from bs4 import BeautifulSoup
+from playwright.async_api import async_playwright
 
-def log(msg):
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
+async def main(horario):
+    print("🔥 SCRIPT INVESTIDOR10_INICIADO")
+    print(f"[ARGS] Horário recebido via argumento: {horario}")
 
-def main(horario):
-    timestamp = datetime.now().strftime("%Y-%m-%d")
-    folder = Path("data")
-    folder.mkdir(exist_ok=True)
-    
-    html_path = folder / f"carteira_{horario.replace(':', '')}_{timestamp}.html"
-    screenshot_pre = folder / f"screenshot_pre_selector_{horario.replace(':', '')}.png"
-    screenshot_post = folder / f"screenshot_post_modal_{horario.replace(':', '')}.png"
-    screenshot_fail = folder / f"screenshot_table_fail_{horario.replace(':', '')}.png"
+    output_dir = "data"
+    os.makedirs(output_dir, exist_ok=True)
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch()
-        page = browser.new_page()
-        log("Acessando a página...")
-        page.goto("https://investidor10.com.br/carteira/545535/", timeout=60000)
-        page.wait_for_timeout(5000)
-        page.screenshot(path=str(screenshot_pre))
-        
-        # Fechar modal se estiver presente
+    filename_prefix = f"{horario.replace(':', '')}"
+    screenshot_path = os.path.join(output_dir, f"screenshot_pre_selector_{filename_prefix}.png")
+    html_output_path = os.path.join(output_dir, f"html_raw_{filename_prefix}.html")
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        page = await browser.new_page()
+        await page.goto("https://investidor10.com.br/carteira/545535/")
+
+        await page.wait_for_timeout(1000)  # Aguarda elementos da página iniciarem
+
+        # Tenta fechar modal se aparecer
         try:
-            if page.locator("#modal-sign").is_visible():
-                log("Modal detectado. Tentando fechar...")
-                page.click(".modal-close")
-                page.wait_for_timeout(2000)
-                page.screenshot(path=str(screenshot_post))
-            else:
-                log("Nenhum modal visível.")
+            modal_close = page.locator("#modal-sign .modal-close").first
+            if await modal_close.is_visible():
+                print("📦 [INFO] Modal detectado, tentando fechar...")
+                await modal_close.click(force=True)
+                await page.wait_for_timeout(500)
         except Exception as e:
-            log(f"Erro ao fechar modal (ignorado): {e}")
-        
-        # Esperar pela tabela
-        try:
-            page.wait_for_selector(".table-responsive", timeout=30000)
-            html = page.content()
-            html_path.write_text(html, encoding="utf-8")
-            log(f"HTML salvo em: {html_path}")
-        except Exception as e:
-            page.screenshot(path=str(screenshot_fail))
-            log(f"Erro ao aguardar tabela: {e}")
+            print(f"⚠️ [WARN] Erro ao tentar fechar modal: {e}")
 
-        browser.close()
+        # Salva screenshot antes de buscar a tabela
+        await page.screenshot(path=screenshot_path)
+        print(f"🖼️ Screenshot pre_selector salva: {screenshot_path}")
+
+        # Aguarda a tabela principal aparecer
+        print("📄 [INFO] Esperando tabela .table-bordered aparecer...")
+        try:
+            await page.wait_for_selector(".table-bordered", timeout=15000)
+            content = await page.content()
+            with open(html_output_path, "w", encoding="utf-8") as f:
+                f.write(content)
+            print(f"✅ HTML bruto salvo: {html_output_path}")
+
+            # Extrai nomes das colunas da tabela (por debug)
+            ths = await page.locator(".table-bordered thead tr th").all_inner_texts()
+            print("📋 Colunas da Tabela:")
+            for col in ths:
+                print(f" - {col.strip()}")
+
+        except Exception as e:
+            print(f"❌ [ERRO] Tabela não carregada: {e}")
+
+        await browser.close()
+
 
 if __name__ == "__main__":
-    horario = sys.argv[1] if len(sys.argv) > 1 else "manual"
-    main(horario)
+    if len(sys.argv) < 2:
+        print("⚠️ Forneça o horário como argumento (ex: 10:30)")
+        sys.exit(1)
+
+    horario = sys.argv[1]
+    import asyncio
+    asyncio.run(main(horario))
