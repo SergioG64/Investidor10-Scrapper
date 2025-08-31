@@ -32,15 +32,22 @@ async def extrair_dados(horario_execucao):
             browser = await p.chromium.launch(headless=True)
             page = await browser.new_page()
             await page.goto(URL, timeout=60000)
+
+            # Screenshot antes de tentar localizar seletor
+            screenshot_path = f"data/screenshot_pre_selector_{horario_execucao.replace(':','')}.png"
+            await page.screenshot(path=screenshot_path, full_page=True)
+            print(f"[✔] Screenshot inicial salva: {screenshot_path}")
+
+            # Aguarda carregamento da tabela
             await page.wait_for_selector(".table-responsive", timeout=60000)
             await page.wait_for_timeout(5000)
 
-            # Screenshot
-            screenshot_path = f"data/screenshot_{horario_execucao.replace(':','')}.png"
-            await page.screenshot(path=screenshot_path, full_page=True)
-            print(f"[✔] Screenshot salva: {screenshot_path}")
+            # Screenshot pós tabela (opcional)
+            screenshot_final = f"data/screenshot_{horario_execucao.replace(':','')}.png"
+            await page.screenshot(path=screenshot_final, full_page=True)
+            print(f"[✔] Screenshot final salva: {screenshot_final}")
 
-            # HTML
+            # HTML da página
             conteudo = await page.content()
             html_path = f"data/carteira_{horario_execucao.replace(':','')}.html"
             with open(html_path, "w", encoding="utf-8") as f:
