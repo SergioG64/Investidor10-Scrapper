@@ -2,10 +2,8 @@ name: Captura de Carteira Investidor10
 
 on:
   schedule:
-    - cron: '0 3 * * *'     # 00:00 BRT (UTC+3)
-    - cron: '13 13 * * *'   # 10:30 BRT
-    - cron: '20 20 * * *'   # 17:00 BRT
-  workflow_dispatch:        # Permite execução manual
+    - cron: '0 20 * * *'   # 17:00 BRT (UTC+3)
+  workflow_dispatch:
 
 jobs:
   run-scraper:
@@ -21,15 +19,21 @@ jobs:
           playwright install chromium
 
       - name: Executar scraper
-        run: |
-          python investidor10_scraper.py "scheduled"
+        run: python investidor10_scraper.py "scheduled"
 
-      - name: Processar HTML para JSON
-        run: |
-          python parse_html_to_json.py "scheduled"
+      - name: Gerar JSON a partir do HTML
+        run: python parse_html_to_json.py "scheduled"
 
-      - name: Armazenar artefatos
-        uses: actions/upload-artifact@v4
-        with:
-          name: carteira-${{ github.run_id }}
-          path: data/
+      - name: Salvar JSON no repositório
+        run: |
+          mkdir -p dados
+          cp data/html_raw_scheduled.json dados/$(date +"%Y-%m-%d").json
+
+      - name: Commit e Push do JSON
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "github-actions@github.com"
+          git pull --rebase
+          git add dados/
+          git commit -m "Atualiza JSON da carteira - $(date +"%Y-%m-%d")" || echo "Nada para commitar"
+          git push
