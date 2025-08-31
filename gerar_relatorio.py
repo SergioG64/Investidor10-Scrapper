@@ -1,93 +1,59 @@
-# gerar_relatorio.py
-
 import os
 import json
-from datetime import datetime
-from glob import glob
+import datetime
+import pandas as pd
 
-def carregar_dados():
-    arquivos = sorted(glob("dados/*.json"))
-    if len(arquivos) < 2:
-        raise Exception("São necessários pelo menos dois arquivos JSON para comparar.")
-    with open(arquivos[-2], encoding='utf-8') as f:
-        dados_inicio = json.load(f)
-    with open(arquivos[-1], encoding='utf-8') as f:
-        dados_fim = json.load(f)
-    return dados_inicio, dados_fim
+# Caminho da pasta onde os arquivos JSON serão salvos
+data_dir = "dados"
 
-def normalizar_valor(valor):
-    if isinstance(valor, str):
-        return float(valor.replace('%', '').replace('+', '').replace('−', '-').replace(',', '.'))
-    return float(valor)
+def encontrar_arquivos_json():
+    arquivos = sorted(os.listdir(data_dir))
+    hoje = datetime.date.today().strftime("%Y-%m-%d")
+    arquivos_hoje = [f for f in arquivos if f.startswith(hoje) and f.endswith(".json")]
+    if len(arquivos_hoje) < 2:
+        raise Exception(f"Esperado 2 arquivos para {hoje}, mas encontrado: {arquivos_hoje}")
+    return os.path.join(data_dir, arquivos_hoje[0]), os.path.join(data_dir, arquivos_hoje[1])
 
-def gerar_relatorio(dados_inicio, dados_fim):
-    ativos = {}
-    for ativo in dados_fim:
-        nome = ativo.get("Ativo") or ativo.get("Nome") or ativo.get("Título")
-        if not nome:
-            continue
-        ativos[nome] = {
-            "final": ativo,
-            "inicio": next((a for a in dados_inicio if a.get("Ativo") == nome or a.get("Nome") == nome or a.get("Título") == nome), {})
-        }
+def carregar_dados(path):
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
 
-    # RESUMO GERAL
-    total_aplicado = 0.0
-    total_saldo = 0.0
-    for ativo in ativos.values():
-        aplicado = ativo["final"].get("Aplicado")
-        saldo = ativo["final"].get("Saldo")
-        if aplicado: total_aplicado += normalizar_valor(aplicado)
-        if saldo: total_saldo += normalizar_valor(saldo)
-    variacao_dia = ((total_saldo / total_aplicado) - 1) * 100 if total_aplicado else 0
+def gerar_relatorio(inicio, fim):
+    df_inicio = pd.DataFrame(inicio)
+    df_fim = pd.DataFrame(fim)
 
-    linhas = []
-    linhas.append("📊 RESUMO GERAL")
-    linhas.append(f"- Valor aplicado: R$ {total_aplicado:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-    linhas.append(f"- Saldo bruto: R$ {total_saldo:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-    linhas.append(f"- Variação do dia: {variacao_dia:+.2f}%")
-    linhas.append("\n")
+    df = df_fim.merge(df_inicio, on="ticker", suffixes=("_fim", "_inicio"))
+    df["variacao_dia"] = df["preco_fim"] / df["preco_inicio"] - 1
 
-    # VARIAÇÃO DO DIA POR ATIVO
-    variacoes = []
-    for nome, dados in ativos.items():
-        try:
-            preco_ini = normalizar_valor(dados["inicio"].get("Preço Atual") or dados["inicio"].get("PU D-1"))
-            preco_fim = normalizar_valor(dados["final"].get("Preço Atual") or dados["final"].get("PU Hoje"))
-            variacao = ((preco_fim / preco_ini) - 1) * 100
-            variacoes.append((nome, variacao))
-        except:
-            continue
+    df.sort_values("variacao_dia", ascending=False, inplace=True)
 
-    variacoes_ordenadas = sorted(variacoes, key=lambda x: x[1], reverse=True)
-    linhas.append("📈 Top 3 Altas do Dia")
-    for i, (nome, var) in enumerate(variacoes_ordenadas[:3], 1):
-        linhas.append(f"{i}. {nome} — [+{var:.2f}%]")
+    # Resumo
+    valor_aplicado = fim[0].get("valor_aplicado", 0)
+    saldo_bruto = fim[0].get("saldo_bruto", 0)
+    variacao_total = fim[0].get("variacao", 0)
 
-    linhas.append("\n📉 Top 3 Baixas do Dia")
-    for i, (nome, var) in enumerate(variacoes_ordenadas[-3:], 1):
-        linhas.append(f"{i}. {nome} — [{var:.2f}%]")
+    print("""\n📊 RESUMO GERAL
+- Valor aplicado: R$ {:.2f}
+- Saldo bruto: R$ {:.2f}
+- Variação do dia: {:.2%}
+""".format(valor_aplicado, saldo_bruto, variacao_total))
 
-    # DETALHAMENTO
-    linhas.append("\n📁 Detalhamento por categoria:")
-    for nome, dados in ativos.items():
-        try:
-            preco_ini = dados["inicio"].get("Preço Atual") or dados["inicio"].get("PU D-1")
-            preco_fim = dados["final"].get("Preço Atual") or dados["final"].get("PU Hoje")
-            variacao = ((normalizar_valor(preco_fim) / normalizar_valor(preco_ini)) - 1) * 100
-        except:
-            preco_ini, preco_fim, variacao = "-", "-", 0
+    print("**📈 Top 3 Altas do Dia**")
+    for i, row in df.head(3).iterrows():
+        print(f"{i+1}. {row['ticker']} — +{row['variacao_dia']*100:.2f}%")
 
-        var_inicio = dados["inicio"].get("Variação") or "-"
-        var_fim = dados["final"].get("Variação") or "-"
+    print("\n**📉 Top 3 Baixas do Dia**")
+    for i, row in df.tail(3).sort_values("variacao_dia").iterrows():
+        print(f"{i+1}. {row['ticker']} — {row['variacao_dia']*100:.2f}%")
 
-        linhas.append(f"{nome} | {preco_ini} → {preco_fim} | ΔDia: {variacao:+.2f}% | Inv10 Início: {var_inicio} | Inv10 Fim: {var_fim}")
-
-    with open("relatorio_diario.txt", "w", encoding="utf-8") as f:
-        f.write("\n".join(linhas))
-
-    print("\n".join(linhas))
+    print("\n---\n**📁 Detalhamento por categoria:**")
+    for categoria in df["categoria"].unique():
+        print(f"\n{categoria} | Ativo | Abertura | Preço ~17h | Variação")
+        for _, row in df[df["categoria"] == categoria].iterrows():
+            print(f"{row['ticker']} | {row['preco_inicio']:.2f} | {row['preco_fim']:.2f} | {row['variacao_dia']*100:.2f}%")
 
 if __name__ == "__main__":
-    dados_inicio, dados_fim = carregar_dados()
+    arq_inicio, arq_fim = encontrar_arquivos_json()
+    dados_inicio = carregar_dados(arq_inicio)
+    dados_fim = carregar_dados(arq_fim)
     gerar_relatorio(dados_inicio, dados_fim)
