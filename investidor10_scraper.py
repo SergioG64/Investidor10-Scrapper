@@ -1,96 +1,60 @@
-import asyncio
+
 import sys
+import os
 from datetime import datetime
-from pathlib import Path
-from playwright.async_api import async_playwright
-import json
+from playwright.sync_api import sync_playwright
 
-print("🔥 SCRIPT INVESTIDOR10_INICIADO")
+def salvar_screenshot(page, etapa, horario):
+    filename = f"data/screenshot_{etapa}_{horario.replace(':', '')}.png"
+    page.screenshot(path=filename, full_page=True)
+    print(f"[✓] Screenshot {etapa} salva: {filename}")
 
-if len(sys.argv) > 1:
-    horario = sys.argv[1]
+def main(horario):
+    print("🔥 SCRIPT INVESTIDOR10_INICIADO")
     print(f"[ARGS] Horário recebido via argumento: {horario}")
-else:
-    horario = "17:00"
-    print("[ARGS] Nenhum argumento recebido, usando default: 17:00")
 
-ARQUIVOS = {
-    "00:00": "data/crypto_open.json",
-    "10:30": "data/open_prices.json",
-    "17:00": "data/final_prices.json"
-}
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        print(f"🕓 Entrou na função com horário: {horario}")
 
-URL = "https://investidor10.com.br/carteira/545535/"
+        # Cria a pasta data/ se não existir
+        os.makedirs("data", exist_ok=True)
 
-async def extrair_dados(horario_execucao):
-    print(f"🕐 Entrou na função com horário: {horario_execucao}")
+        try:
+            page.goto("https://investidor10.com.br/carteira/545535/", timeout=60000)
+            salvar_screenshot(page, "pre_selector", horario)
 
-    Path("data").mkdir(parents=True, exist_ok=True)
-
-    try:
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            page = await browser.new_page()
-            await page.goto(URL, timeout=60000)
-            await page.wait_for_timeout(3000)  # tempo para elementos iniciais
-
-            # Screenshot antes de qualquer ação
-            screenshot_path = f"data/screenshot_pre_selector_{horario_execucao.replace(':','')}.png"
-            await page.screenshot(path=screenshot_path, full_page=True)
-            print(f"[✔] Screenshot inicial salva: {screenshot_path}")
-
-            # Fecha modal se visível
+            # Tenta fechar o modal de vídeo se visível
             try:
-                modal_btn = await page.query_selector("div.vjs-modal-dialog button, div.vjs-modal-dialog .vjs-close-button, .vjs-modal-dialog button[title='Fechar']")
-                if modal_btn:
-                    await modal_btn.click()
-                    print("[INFO] Modal fechado com sucesso.")
-                    await page.wait_for_timeout(1000)
+                modal_close = page.locator("button[aria-label='Fechar']")
+                if modal_close.is_visible():
+                    print("[INFO] Modal detectado. Fechando...")
+                    modal_close.click()
+                    page.wait_for_timeout(1000)
                 else:
                     print("[INFO] Nenhum modal detectado.")
             except Exception as e:
-                print(f"[WARN] Erro ao tentar fechar o modal: {str(e)}")
+                print("[WARN] Erro ao tentar fechar modal:", e)
 
-            # Aguarda tabelas
-            await page.wait_for_selector(".table-responsive", timeout=60000)
-            await page.wait_for_timeout(5000)
+            # Aguarda a tabela da carteira estar visível
+            page.wait_for_selector(".table-responsive", timeout=30000)
 
-            # Screenshot final
-            screenshot_final = f"data/screenshot_{horario_execucao.replace(':','')}.png"
-            await page.screenshot(path=screenshot_final, full_page=True)
-            print(f"[✔] Screenshot final salva: {screenshot_final}")
-
-            # HTML da página
-            conteudo = await page.content()
-            html_path = f"data/carteira_{horario_execucao.replace(':','')}.html"
+            # Salva HTML bruto
+            html_path = f"data/carteira_{horario.replace(':', '')}.html"
             with open(html_path, "w", encoding="utf-8") as f:
-                f.write(conteudo)
-            print(f"[✔] HTML salvo: {html_path}")
+                f.write(page.content())
+            print(f"[✓] HTML salvo em: {html_path}")
 
-            # Tabelas
-            tabelas = await page.query_selector_all(".table-responsive")
-            print(f"[INFO] Quantidade de tabelas encontradas: {len(tabelas)}")
+            salvar_screenshot(page, "final", horario)
+        except Exception as e:
+            print("[ERRO] Ocorreu um erro:", e)
+        finally:
+            browser.close()
 
-            dados = []
-            for idx, tabela in enumerate(tabelas):
-                html = await tabela.inner_html()
-                dados.append({"index": idx, "html": html})
-
-            await browser.close()
-
-            json_dest = ARQUIVOS.get(horario_execucao)
-            if json_dest:
-                with open(json_dest, "w", encoding="utf-8") as f:
-                    json.dump({
-                        "data": str(datetime.now()),
-                        "tabelas": dados
-                    }, f, ensure_ascii=False, indent=2)
-                print(f"[✔] JSON salvo: {json_dest}")
-            else:
-                print("[⚠] Horário inválido. JSON não salvo.")
-
-    except Exception as e:
-        print(f"[ERRO] Ocorreu um erro: {e}")
-
-# Executa
-asyncio.run(extrair_dados(horario))
+if __name__ == "__main__":
+    if len(sys.argv) > 1:
+        horario = sys.argv[1]
+    else:
+        horario = datetime.now().strftime("%H:%M")
+    main(horario)
