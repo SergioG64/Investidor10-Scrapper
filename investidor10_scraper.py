@@ -32,17 +32,30 @@ async def extrair_dados(horario_execucao):
             browser = await p.chromium.launch(headless=True)
             page = await browser.new_page()
             await page.goto(URL, timeout=60000)
+            await page.wait_for_timeout(3000)  # tempo para elementos iniciais
 
-            # Screenshot antes de tentar localizar seletor
+            # Screenshot antes de qualquer ação
             screenshot_path = f"data/screenshot_pre_selector_{horario_execucao.replace(':','')}.png"
             await page.screenshot(path=screenshot_path, full_page=True)
             print(f"[✔] Screenshot inicial salva: {screenshot_path}")
 
-            # Aguarda carregamento da tabela
+            # Fecha modal se visível
+            try:
+                modal_btn = await page.query_selector("div.vjs-modal-dialog button, div.vjs-modal-dialog .vjs-close-button, .vjs-modal-dialog button[title='Fechar']")
+                if modal_btn:
+                    await modal_btn.click()
+                    print("[INFO] Modal fechado com sucesso.")
+                    await page.wait_for_timeout(1000)
+                else:
+                    print("[INFO] Nenhum modal detectado.")
+            except Exception as e:
+                print(f"[WARN] Erro ao tentar fechar o modal: {str(e)}")
+
+            # Aguarda tabelas
             await page.wait_for_selector(".table-responsive", timeout=60000)
             await page.wait_for_timeout(5000)
 
-            # Screenshot pós tabela (opcional)
+            # Screenshot final
             screenshot_final = f"data/screenshot_{horario_execucao.replace(':','')}.png"
             await page.screenshot(path=screenshot_final, full_page=True)
             print(f"[✔] Screenshot final salva: {screenshot_final}")
