@@ -1,118 +1,93 @@
-import json
+# gerar_relatorio.py
+
 import os
-import datetime
-import difflib
+import json
+from datetime import datetime
 from glob import glob
 
+def carregar_dados():
+    arquivos = sorted(glob("dados/*.json"))
+    if len(arquivos) < 2:
+        raise Exception("São necessários pelo menos dois arquivos JSON para comparar.")
+    with open(arquivos[-2], encoding='utf-8') as f:
+        dados_inicio = json.load(f)
+    with open(arquivos[-1], encoding='utf-8') as f:
+        dados_fim = json.load(f)
+    return dados_inicio, dados_fim
 
-# ❌ ERRO se não houver arquivos
-arquivos = sorted(glob("dados/*.json"))
-if len(arquivos) < 2:
-    print("[ERRO] É preciso ter ao menos dois arquivos JSON para comparar.")
-    exit(1)
+def normalizar_valor(valor):
+    if isinstance(valor, str):
+        return float(valor.replace('%', '').replace('+', '').replace('−', '-').replace(',', '.'))
+    return float(valor)
 
-# ✅ Identifica o arquivo mais recente (final do dia) e anterior (início do dia)
-json_final_path = arquivos[-1]
-json_inicio_path = arquivos[-2]
+def gerar_relatorio(dados_inicio, dados_fim):
+    ativos = {}
+    for ativo in dados_fim:
+        nome = ativo.get("Ativo") or ativo.get("Nome") or ativo.get("Título")
+        if not nome:
+            continue
+        ativos[nome] = {
+            "final": ativo,
+            "inicio": next((a for a in dados_inicio if a.get("Ativo") == nome or a.get("Nome") == nome or a.get("Título") == nome), {})
+        }
 
-with open(json_inicio_path, encoding="utf-8") as f:
-    inicio_data = json.load(f)
+    # RESUMO GERAL
+    total_aplicado = 0.0
+    total_saldo = 0.0
+    for ativo in ativos.values():
+        aplicado = ativo["final"].get("Aplicado")
+        saldo = ativo["final"].get("Saldo")
+        if aplicado: total_aplicado += normalizar_valor(aplicado)
+        if saldo: total_saldo += normalizar_valor(saldo)
+    variacao_dia = ((total_saldo / total_aplicado) - 1) * 100 if total_aplicado else 0
 
-with open(json_final_path, encoding="utf-8") as f:
-    final_data = json.load(f)
+    linhas = []
+    linhas.append("📊 RESUMO GERAL")
+    linhas.append(f"- Valor aplicado: R$ {total_aplicado:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+    linhas.append(f"- Saldo bruto: R$ {total_saldo:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+    linhas.append(f"- Variação do dia: {variacao_dia:+.2f}%")
+    linhas.append("\n")
 
+    # VARIAÇÃO DO DIA POR ATIVO
+    variacoes = []
+    for nome, dados in ativos.items():
+        try:
+            preco_ini = normalizar_valor(dados["inicio"].get("Preço Atual") or dados["inicio"].get("PU D-1"))
+            preco_fim = normalizar_valor(dados["final"].get("Preço Atual") or dados["final"].get("PU Hoje"))
+            variacao = ((preco_fim / preco_ini) - 1) * 100
+            variacoes.append((nome, variacao))
+        except:
+            continue
 
-# Extrai dados gerais (valor aplicado, saldo bruto, variação)
-def extrair_resumo(d):
-    return {
-        "valor_aplicado": d.get("valor_aplicado", 0),
-        "saldo_bruto": d.get("saldo_bruto", 0),
-        "variacao": d.get("variacao", "0%")
-    }
+    variacoes_ordenadas = sorted(variacoes, key=lambda x: x[1], reverse=True)
+    linhas.append("📈 Top 3 Altas do Dia")
+    for i, (nome, var) in enumerate(variacoes_ordenadas[:3], 1):
+        linhas.append(f"{i}. {nome} — [+{var:.2f}%]")
 
+    linhas.append("\n📉 Top 3 Baixas do Dia")
+    for i, (nome, var) in enumerate(variacoes_ordenadas[-3:], 1):
+        linhas.append(f"{i}. {nome} — [{var:.2f}%]")
 
-# Gera dicionário de ativos por nome
-inicio_ativos = {a["ativo"]: a for a in inicio_data["ativos"]}
-final_ativos = {a["ativo"]: a for a in final_data["ativos"]}
+    # DETALHAMENTO
+    linhas.append("\n📁 Detalhamento por categoria:")
+    for nome, dados in ativos.items():
+        try:
+            preco_ini = dados["inicio"].get("Preço Atual") or dados["inicio"].get("PU D-1")
+            preco_fim = dados["final"].get("Preço Atual") or dados["final"].get("PU Hoje")
+            variacao = ((normalizar_valor(preco_fim) / normalizar_valor(preco_ini)) - 1) * 100
+        except:
+            preco_ini, preco_fim, variacao = "-", "-", 0
 
+        var_inicio = dados["inicio"].get("Variação") or "-"
+        var_fim = dados["final"].get("Variação") or "-"
 
-# Gera o relatório
-hoje = datetime.datetime.today().strftime("%d/%m/%Y")
-resumo_inicio = extrair_resumo(inicio_data)
-resumo_final = extrair_resumo(final_data)
+        linhas.append(f"{nome} | {preco_ini} → {preco_fim} | ΔDia: {variacao:+.2f}% | Inv10 Início: {var_inicio} | Inv10 Fim: {var_fim}")
 
-relatorio = f"""
-📅 **Relatório da Carteira - {hoje}**
+    with open("relatorio_diario.txt", "w", encoding="utf-8") as f:
+        f.write("\n".join(linhas))
 
----
-**📊 RESUMO GERAL**
-- Valor aplicado: R$ {resumo_final['valor_aplicado']}
-- Saldo bruto: R$ {resumo_final['saldo_bruto']}
-- Variação do dia: {resumo_final['variacao']}
+    print("\n".join(linhas))
 
----
-"""
-
-# Cálculo da variação no dia
-def calc_variacao_dia(inicio, fim):
-    try:
-        p1 = float(inicio.replace("R$", "").replace(",", "."))
-        p2 = float(fim.replace("R$", "").replace(",", "."))
-        return ((p2 - p1) / p1) * 100
-    except:
-        return 0
-
-# Cria lista com ativos e variação no dia
-ativos_resultado = []
-for ativo, final_info in final_ativos.items():
-    inicio_info = inicio_ativos.get(ativo)
-    if not inicio_info:
-        continue
-
-    preco_inicio = inicio_info.get("preco_atual") or inicio_info.get("preco")
-    preco_fim = final_info.get("preco_atual") or final_info.get("preco")
-
-    variacao_dia = calc_variacao_dia(preco_inicio, preco_fim)
-
-    ativos_resultado.append({
-        "ativo": ativo,
-        "categoria": final_info.get("categoria", "N/D"),
-        "abertura": preco_inicio,
-        "fechamento": preco_fim,
-        "variacao_dia": variacao_dia,
-        "var_ini": final_info.get("variacao_inicio"),
-        "var_fim": final_info.get("variacao_fim")
-    })
-
-# Ordena por variação
-altas = sorted(ativos_resultado, key=lambda x: -x["variacao_dia"])[:3]
-baixas = sorted(ativos_resultado, key=lambda x: x["variacao_dia"])[:3]
-
-relatorio += "**📈 Top 3 Altas do Dia**\n"
-for a in altas:
-    relatorio += f"1. {a['ativo']} — [+{a['variacao_dia']:.2f}%]\n"
-
-relatorio += "\n**📉 Top 3 Baixas do Dia**\n"
-for a in baixas:
-    relatorio += f"1. {a['ativo']} — [{a['variacao_dia']:.2f}%]\n"
-
-# Agrupamento por categoria
-relatorio += "\n---\n**📁 Detalhamento por categoria:**\n"
-
-categorias = {}
-for a in ativos_resultado:
-    cat = a["categoria"]
-    categorias.setdefault(cat, []).append(a)
-
-for cat, lista in categorias.items():
-    relatorio += f"\n{cat} | Ativo | Abertura | Fechamento | Variação | Var.Início | Var.Fim\n"
-    for a in lista:
-        relatorio += f"- {a['ativo']} | {a['abertura']} | {a['fechamento']} | {a['variacao_dia']:.2f}% | {a['var_ini']} | {a['var_fim']}\n"
-
-print(relatorio)
-
-# Opcional: salvar em txt
-with open("relatorio_diario.txt", "w", encoding="utf-8") as f:
-    f.write(relatorio)
-
-print("\n✅ Relatório gerado com sucesso.")
+if __name__ == "__main__":
+    dados_inicio, dados_fim = carregar_dados()
+    gerar_relatorio(dados_inicio, dados_fim)
