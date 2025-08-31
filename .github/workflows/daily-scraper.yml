@@ -2,7 +2,8 @@ name: Captura de Carteira Investidor10
 
 on:
   schedule:
-    - cron: '0 20 * * *'   # 17:00 BRT (UTC+3)
+    - cron: '30 13 * * *'   # 10:30 BRT → captura da manhã
+    - cron: '0 20 * * *'    # 17:00 BRT → captura do fechamento
   workflow_dispatch:
 
 jobs:
@@ -24,10 +25,16 @@ jobs:
       - name: Gerar JSON a partir do HTML
         run: python parse_html_to_json.py "scheduled"
 
-      - name: Salvar JSON no repositório
+      - name: Salvar JSON no repositório com sufixo
         run: |
           mkdir -p dados
-          cp data/html_raw_scheduled.json dados/$(date +"%Y-%m-%d").json
+          HORA=$(date +'%H')
+          if [ "$HORA" -lt 15 ]; then
+            SUFIXO="_1"
+          else
+            SUFIXO="_2"
+          fi
+          cp data/html_raw_scheduled.json dados/$(date +"%Y-%m-%d")${SUFIXO}.json
 
       - name: Commit e Push do JSON
         run: |
