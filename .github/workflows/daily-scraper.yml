@@ -1,55 +1,55 @@
-name: Captura de Carteira Investidor10
+#name: Captura de Carteira Investidor10
 
-on:
-  schedule:
-    - cron: '30 13 * * *'   # 10:30 BRT (13:30 UTC) — Abertura
-    - cron: '0 20 * * *'     # 17:00 BRT (20:00 UTC) — Fechamento
-  workflow_dispatch:
+# on:
+#   schedule:
+#     - cron: '30 13 * * *'   # 10:30 BRT (13:30 UTC) — Abertura
+#     - cron: '0 20 * * *'     # 17:00 BRT (20:00 UTC) — Fechamento
+#   workflow_dispatch:
 
-jobs:
-  run-scraper:
-    runs-on: ubuntu-latest
+# jobs:
+#   run-scraper:
+#     runs-on: ubuntu-latest
 
-    steps:
-      - name: Checkout do código
-        uses: actions/checkout@v3
+#     steps:
+#       - name: Checkout do código
+#         uses: actions/checkout@v3
 
-      - name: Instalar dependências
-        run: |
-          python -m pip install --upgrade pip
-          pip install playwright beautifulsoup4 lxml
-          playwright install chromium
+#       - name: Instalar dependências
+#         run: |
+#           python -m pip install --upgrade pip
+#           pip install playwright beautifulsoup4 lxml
+#           playwright install chromium
 
-      - name: Executar scraper
-        run: python investidor10_scraper.py "scheduled"
+#       - name: Executar scraper
+#         run: python investidor10_scraper.py "scheduled"
 
-      - name: Gerar JSON a partir do HTML
-        run: python parse_html_to_json.py "scheduled"
+#       - name: Gerar JSON a partir do HTML
+#         run: python parse_html_to_json.py "scheduled"
 
-      - name: Salvar JSON com sufixo (manhã = _1 / tarde = _2)
-        run: |
-          mkdir -p dados
-          HORA=$(TZ='America/Sao_Paulo' date +'%H')
-          if [ "$HORA" -lt 15 ]; then
-            SUFIXO="_1"
-          else
-            SUFIXO="_2"
-          fi
+#       - name: Salvar JSON com sufixo (manhã = _1 / tarde = _2)
+#         run: |
+#           mkdir -p dados
+#           HORA=$(TZ='America/Sao_Paulo' date +'%H')
+#           if [ "$HORA" -lt 15 ]; then
+#             SUFIXO="_1"
+#           else
+#             SUFIXO="_2"
+#           fi
 
-          NOME_ARQUIVO="dados/$(TZ='America/Sao_Paulo' date +'%Y-%m-%d')${SUFIXO}.json"
+#           NOME_ARQUIVO="dados/$(TZ='America/Sao_Paulo' date +'%Y-%m-%d')${SUFIXO}.json"
 
-          if [ -f "$NOME_ARQUIVO" ]; then
-            echo "⚠️ Arquivo $NOME_ARQUIVO já existe. Abortando para evitar sobrescrita."
-            exit 1
-          fi
+#           if [ -f "$NOME_ARQUIVO" ]; then
+#             echo "⚠️ Arquivo $NOME_ARQUIVO já existe. Abortando para evitar sobrescrita."
+#             exit 1
+#           fi
 
-          cp data/html_raw_scheduled.json "$NOME_ARQUIVO"
+#           cp data/html_raw_scheduled.json "$NOME_ARQUIVO"
 
-      - name: Commit e Push do JSON
-        run: |
-          git config --global user.name "github-actions"
-          git config --global user.email "github-actions@github.com"
-          git pull --rebase
-          git add dados/
-          git commit -m "📥 Atualiza JSON da carteira - $(TZ='America/Sao_Paulo' date +"%Y-%m-%d %H:%M:%S")" || echo "Nada para commitar"
-          git push
+#       - name: Commit e Push do JSON
+#         run: |
+#           git config --global user.name "github-actions"
+#           git config --global user.email "github-actions@github.com"
+#           git pull --rebase
+#           git add dados/
+#           git commit -m "📥 Atualiza JSON da carteira - $(TZ='America/Sao_Paulo' date +"%Y-%m-%d %H:%M:%S")" || echo "Nada para commitar"
+#           git push
